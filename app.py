@@ -5,10 +5,11 @@ import os
 
 from archival_dashboard_generator import parse_survey_csv, analyse, build_html
 
-# OpenAI (new SDK style)
-from openai import OpenAI
+# Gemini
+import google.generativeai as genai
 
 st.set_page_config(layout="wide")
+
 
 # ---------- BACKGROUND ---------- #
 def set_bg():
@@ -58,6 +59,7 @@ def set_bg():
     </style>
     """, unsafe_allow_html=True)
 
+
 set_bg()
 
 # ---------- UI ---------- #
@@ -66,37 +68,40 @@ st.write("Upload CSV & click Generate")
 
 uploaded_file = st.file_uploader("", type=["csv"], label_visibility="collapsed")
 
-# ---------- AI FUNCTION ---------- #
+
+# ---------- GEMINI FUNCTION ---------- #
 def generate_ai_insight(data):
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("GEMINI_API_KEY")
 
     if not api_key:
-        return "⚠️ No API key found. Set OPENAI_API_KEY to enable AI insights."
+        return "⚠️ No Gemini API key found. Set GEMINI_API_KEY in Streamlit Secrets."
 
-    client = OpenAI(api_key=api_key)
+    genai.configure(api_key=api_key)
+
+    model = genai.GenerativeModel("gemini-1.5-flash")
 
     prompt = f"""
-    Analyze this archival dataset summary and give clear insights:
+    You are a data analyst.
+
+    Analyze this archival dataset and give meaningful insights:
 
     Total records: {data['total']}
     Condition A: {data['cond_a']}
     Condition B: {data['cond_b']}
     Condition C: {data['cond_c']}
-    Avg pages: {data['avg_pages']}
-    Damage: {data['damage']}
+    Average pages: {data['avg_pages']}
+    Damage breakdown: {data['damage']}
 
-    Give 4-5 meaningful insights in simple bullet points.
+    Provide 4-5 sharp insights in bullet points.
+    Avoid generic statements.
     """
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}]
-    )
+    response = model.generate_content(prompt)
 
-    return response.choices[0].message.content
+    return response.text
 
 
-# ---------- MAIN ACTION ---------- #
+# ---------- MAIN ---------- #
 if st.button("Generate"):
     if uploaded_file:
 
@@ -112,7 +117,6 @@ if st.button("Generate"):
 
             st.success("Dashboard ready!")
 
-            # Download
             st.download_button(
                 "⬇ Download Dashboard",
                 data=html,
@@ -120,10 +124,19 @@ if st.button("Generate"):
                 mime="text/html"
             )
 
-            # AI Insights
             st.write("## 🤖 AI Insights")
-            ai_text = generate_ai_insight(data)
-            st.write(ai_text)
+
+            try:
+                with st.spinner("Analyzing data..."):
+                    ai_text = generate_ai_insight(data)
+                    st.write(ai_text)
+
+            except Exception:
+                st.warning("AI unavailable. Showing basic insights.")
+
+                st.write(f"• Total records: {data['total']}")
+                st.write(f"• Condition C (poor): {data['cond_c']}")
+                st.write(f"• Average pages: {data['avg_pages']}")
 
         else:
             st.error("Invalid CSV")
